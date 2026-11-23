@@ -104,7 +104,21 @@ const S1=[['dep','Départ','text',1],['arr','Arrivée','text',1],['trip','Trajet
 $('#hq').className='fg';$('#hq').innerHTML=FS(S1)+BT('Rechercher','y');$('#fr').innerHTML=FS(S1)+FS(S2)+BT('Rechercher');
 $('#hc').className='fg';$('#hc').innerHTML=FS([['dep','Départ','text',1],['arr','Arrivée','text',1],['poids_kg','Poids estimé (kg)','number',1]])+BT('Demander un devis','y');
 $('#hs').className='fg';$('#hs').innerHTML=FS([['ref','Numéro de suivi','text',1]])+BT('Suivre mon colis','y');
-$$('[name=d1],[name=d2]').forEach(i=>i.min=new Date().toISOString().slice(0,10));
+const today=()=>new Date().toISOString().slice(0,10);
+$('[name=d1],[name=d2]').forEach(i=>i.min=today());
+const syncTripDates=form=>{
+ const trip=form.querySelector('[name=trip]'),dep=form.querySelector('[name=d1]'),ret=form.querySelector('[name=d2]');
+ if(!trip||!dep||!ret)return;
+ ret.required=trip.value==='Aller-retour';
+ ret.min=dep.value||today();
+ ret.setCustomValidity(dep.value&&ret.value&&ret.value<dep.value?'La date de retour doit être égale ou postérieure à la date de départ.':'');
+};
+['#hq','#fr','#fw'].forEach(selector=>{
+ const form=$(selector);
+ form.addEventListener('input',()=>syncTripDates(form));
+ form.addEventListener('change',()=>syncTripDates(form));
+ syncTripDates(form);
+});
 $('#fw').querySelector('.sp[data-s="1"]').insertAdjacentHTML('beforeend',FS(S1)+FS(S2));
 $('#fw').querySelector('.sp[data-s="2"]').insertAdjacentHTML('beforeend',FS([['nom','Nom','text',1],['postnom','Postnom','text'],['prenom','Prénom','text',1],['naiss','Date de naissance','date',1],['nat','Nationalité','text',1],['doc','Document de voyage','select',0,['Passeport','Carte d’identité','Autre']],['autres','Autres passagers (nom, prénom, naissance)','textarea']]));
 $('#fw').querySelector('.sp[data-s="3"]').insertAdjacentHTML('beforeend',FS([['email','E-mail','email',1],['tel','Téléphone','tel',1],['pays','Pays','text',1],['urg','Contact d’urgence (si nécessaire)','text']]));
@@ -123,7 +137,19 @@ addEventListener('click',e=>{const b=e.target.closest('[data-cp],[data-pr],[data
 const bind=(s,fn,t,msg,out)=>$(s).onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);if(f.get('site'))return;const o=Object.fromEntries(f);try{const ref=await rpc(fn,{p:o});ack(out,ref,t,msg,o);e.target.reset()}catch(x){$(out).innerHTML='<div class="card ok"><h3>Envoi impossible</h3><p class="m">Le serveur n’a pas répondu. Réessayez, ou copiez votre demande et envoyez-la à l’équipe.</p><textarea readonly rows="6">'+Object.entries(o).filter(([k,v])=>v).map(([k,v])=>`${LB[k]||k} : ${v}`).join('\n').replace(/</g,'&lt;')+'</textarea></div>'}};
 bind('#fd','submit_quote','Demande de devis enregistrée','Ce devis n’est pas un tarif définitif : le service Cargo analysera votre demande avant de vous répondre.','#ad');
 bind('#fc','submit_message','Message prêt à envoyer','Merci : notre équipe vous répondra dès réception.','#ac');
-const srch=o=>{const q=s=>(s||'').toLowerCase().trim(),l=FLIGHTS.filter(f=>q(f.dep).includes(q(o.dep))&&q(f.arr).includes(q(o.arr)));$('#rs').innerHTML=l.length?l.map(f=>`<div class="card" style="margin-bottom:10px"><b>${f.n}</b> · ${f.dep} → ${f.arr} · ${f.h1} · ${f.pr||''} <button class="btn" style="float:right" data-sc="#fwt">Demander</button></div>`).join(''):'<div class="card"><h3>Aucun vol publié pour ce trajet</h3><p class="m">Les vols sont affichés dès leur confirmation par la compagnie. Vous pouvez envoyer une demande de réservation : un agent vous répondra.</p><button class="btn" data-sc="#fwt">Faire une demande</button></div>'};
+const srch=o=>{
+ const q=s=>(s||'').toLocaleLowerCase('fr').trim();
+ const day=value=>{const d=new Date(value);return Number.isNaN(d.getTime())?'':[d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
+ const matches=(dep,arr,date)=>FLIGHTS.filter(f=>
+  q(f.dep_city||f.dep).includes(q(dep))&&q(f.arr_city||f.arr).includes(q(arr))&&(!date||day(f.scheduled_at)===date)
+ );
+ const card=f=>`<div class="card" style="margin-bottom:10px"><b>${E(f.flight_no||f.n)}</b> · ${E(f.dep_city||f.dep)} → ${E(f.arr_city||f.arr)} · ${FD(f.scheduled_at)} · ${E(f.price||f.pr||'')} <button class="btn" style="float:right" data-sc="#fwt">Demander</button></div>`;
+ const section=(title,flights)=>`<h3 style="margin:18px 0 10px">${title}</h3>`+(flights.length?flights.map(card).join(''):'<div class="card"><p class="m">Aucun vol confirmé pour cette date et ce trajet.</p></div>');
+ const outbound=matches(o.dep,o.arr,o.d1);
+ const returning=o.trip==='Aller-retour'?matches(o.arr,o.dep,o.d2):[];
+ const html=section('Vol aller',outbound)+(o.trip==='Aller-retour'?section('Vol retour',returning):'');
+ $('#rs').innerHTML=(outbound.length||returning.length)?html:`<div class="card"><h3>Aucun vol publié pour ces critères</h3><p class="m">Aucun vol confirmé ne correspond aux villes et aux dates choisies. Vous pouvez néanmoins envoyer une demande à notre équipe.</p><button class="btn" data-sc="#fwt">Faire une demande</button></div>`;
+};
 const go=(f,o)=>{pre('#fr',o);pre('#fw',o);srch(o);if(f)location.hash='reserver'};
 $('#hq').onsubmit=e=>{e.preventDefault();go(1,Object.fromEntries(new FormData(e.target)))};$('#fr').onsubmit=e=>{e.preventDefault();go(0,Object.fromEntries(new FormData(e.target)))};
 $('#hc').onsubmit=e=>{e.preventDefault();pre('#fd',Object.fromEntries(new FormData(e.target)));location.hash='devis'};
